@@ -5,8 +5,6 @@ DEFAULT_APP_NAME="ladug"
 DEFAULT_ROLE_NAME="uus"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 
-# Target region untuk training job default dibuat di region pertama yang diinput,
-# atau fallback ke us-east-2 bila tidak ada input.
 TRAINING_REGION="${TRAINING_REGION:-us-east-2}"
 
 REGULAR_INSTANCE_TYPES=(
@@ -56,19 +54,19 @@ check_training_dataset() {
   local s3_prefix="s3://${ACCOUNT_ID}-${region}/${APP_NAME}/"
   local object_count
 
-  echo "Memeriksa dataset training di ${s3_prefix}..."
+  echo "Ngecek dataset training di ${s3_prefix}..."
   object_count=$(aws s3 ls "${s3_prefix}" --recursive --region "${region}" 2>/tmp/s3-training-check.log | wc -l | tr -d ' ' || true)
 
   if [[ "${object_count}" -eq 0 ]]; then
-    echo "[ERROR] Dataset training tidak ditemukan di ${s3_prefix}."
-    echo "[ERROR] Upload dataset Anda ke prefix tersebut sebelum membuat SageMaker Training Job."
+    echo "[ERROR] Dataset training teu kapanggih di ${s3_prefix}."
+    echo "[ERROR] Unggah dataset anjeun ka prefix eta saméméh nyieun SageMaker Training Job."
     if [[ -s /tmp/s3-training-check.log ]]; then
-      echo "[ERROR] Detail: $(tail -n 20 /tmp/s3-training-check.log)"
+      echo "[ERROR] Rincian: $(tail -n 20 /tmp/s3-training-check.log)"
     fi
     return 1
   fi
 
-  echo "[OK] Dataset ditemukan di ${s3_prefix} (${object_count} object)."
+  echo "[OKE] Dataset kapanggih di ${s3_prefix} (${object_count} object)."
   return 0
 }
 
@@ -80,7 +78,7 @@ create_regular_job() {
   local target_region="$5"
   local job_arn=""
 
-  echo "Membuat regular training job: ${job_name} di ${target_region}"
+  echo "Nyieun regular training job: ${job_name} di ${target_region}"
   if job_arn=$(aws sagemaker create-training-job \
     --region "${target_region}" \
     --training-job-name "${job_name}" \
@@ -91,10 +89,10 @@ create_regular_job() {
     --resource-config "InstanceType=${instance_type},InstanceCount=${instance_count},VolumeSizeInGB=10" \
     --stopping-condition "MaxRuntimeInSeconds=432000" \
     --query 'TrainingJobArn' --output text 2>/tmp/sagemaker-create-job.log); then
-    echo "[SUCCESS] Regular job dibuat: name=${job_name}, id=${job_arn}, region=${target_region}"
+    echo "[BERHASIL] Regular job geus dijieun: name=${job_name}, id=${job_arn}, region=${target_region}"
     return 0
   else
-    echo "[FAILED] Regular job gagal dibuat: name=${job_name}, region=${target_region}" >&2
+    echo "[GAGAL] Regular job teu bisa dijieun: name=${job_name}, region=${target_region}" >&2
     if [[ -s /tmp/sagemaker-create-job.log ]]; then
       echo "[ERROR] ${job_name}: $(tail -n 20 /tmp/sagemaker-create-job.log)" >&2
     fi
@@ -110,7 +108,7 @@ create_spot_job() {
   local target_region="$5"
   local job_arn=""
 
-  echo "Membuat spot training job: ${job_name} di ${target_region}"
+  echo "Nyieun spot training job: ${job_name} di ${target_region}"
   if job_arn=$(aws sagemaker create-training-job \
     --region "${target_region}" \
     --training-job-name "${job_name}" \
@@ -122,10 +120,10 @@ create_spot_job() {
     --stopping-condition "MaxRuntimeInSeconds=432000,MaxWaitTimeInSeconds=432000" \
     --enable-managed-spot-training \
     --query 'TrainingJobArn' --output text 2>/tmp/sagemaker-create-spot-job.log); then
-    echo "[SUCCESS] Spot job dibuat: name=${job_name}, id=${job_arn}, region=${target_region}"
+    echo "[BERHASIL] Spot job geus dijieun: name=${job_name}, id=${job_arn}, region=${target_region}"
     return 0
   else
-    echo "[FAILED] Spot job gagal dibuat: name=${job_name}, region=${target_region}" >&2
+    echo "[GAGAL] Spot job teu bisa dijieun: name=${job_name}, region=${target_region}" >&2
     if [[ -s /tmp/sagemaker-create-spot-job.log ]]; then
       echo "[ERROR] ${job_name}: $(tail -n 20 /tmp/sagemaker-create-spot-job.log)" >&2
     fi
@@ -135,32 +133,31 @@ create_spot_job() {
 
 echo "=== Proses Deployment AWS + IAM Role ==="
 
-# Cek status AWS tanpa perlu login manual
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
 if [[ -z "${ACCOUNT_ID}" ]]; then
   echo "Awas! AWS CLI teu tiasa ngakses akun CloudShell."
-  echo "Pastikeun CloudShell anjeun ngagunakeun akun AWS anu bener."
+  echo "Pastikeun CloudShell anjeun nganggo akun AWS anu leres."
   exit 1
 fi
 
-echo "Nomor akun AWS anjeun: ${ACCOUNT_ID}"
+echo "Nomer akun AWS anjeun: ${ACCOUNT_ID}"
 
-echo "Ketik nama aplikasi / repo (teken enter kanggo make bawaan: ${DEFAULT_APP_NAME})"
+echo "Ketik nami aplikasi / repo (teken enter pikeun make bawaan: ${DEFAULT_APP_NAME})"
 read -r APP_NAME
 if [[ -z "${APP_NAME}" ]]; then
   APP_NAME="${DEFAULT_APP_NAME}"
 fi
-echo "Nama aplikasi anu dipake: ${APP_NAME}"
+echo "Nami aplikasi anu dipaké: ${APP_NAME}"
 
-echo "Ketik nama role IAM (teken enter kanggo make bawaan: ${DEFAULT_ROLE_NAME})"
+echo "Ketik nami role IAM (teken enter pikeun make bawaan: ${DEFAULT_ROLE_NAME})"
 read -r ROLE_NAME
 if [[ -z "${ROLE_NAME}" ]]; then
   ROLE_NAME="${DEFAULT_ROLE_NAME}"
 fi
-echo "Nama role IAM anu dipake: ${ROLE_NAME}"
+echo "Nami role IAM anu dipaké: ${ROLE_NAME}"
 
-echo "Ketik region AWS anu rek dipake, pisahkeun ku koma"
-echo "Contoh: us-east-1,us-east-2,us-west-2"
+echo "Ketik region AWS anu rek dipaké, pisahkeun ku koma"
+echo "Contona: us-east-1,us-east-2,us-west-2"
 read -r REGION_INPUT
 
 if [[ -z "${REGION_INPUT}" ]]; then
@@ -169,7 +166,6 @@ fi
 
 IFS=',' read -ra REGIONS <<< "${REGION_INPUT}"
 
-# Validasi format region tanpa ngagunakeun aws ec2 describe-regions
 for region in "${REGIONS[@]}"; do
   region="${region//[[:space:]]/}"
   if [[ -z "${region}" ]]; then
@@ -178,21 +174,20 @@ for region in "${REGIONS[@]}"; do
 
   if [[ ! "${region}" =~ ^[a-z]+-[a-z]+-[0-9]+$ ]]; then
     echo "Format region salah: ${region}"
-    echo "Contona nu bener: us-east-1, us-east-2, us-west-2"
+    echo "Contona anu bener: us-east-1,us-east-2,us-west-2"
     exit 1
   fi
 done
 
-echo "Region anu bakal dipake:"
+echo "Region anu bakal dipaké:"
 printf '%s\n' "${REGIONS[@]}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker teu kapanggih di CloudShell."
-  echo "Tanpa Docker, build/push image moal bisa."
+  echo "Tanpa Docker, build/push image moal tiasa."
   exit 1
 fi
 
-# Gunakeun region pertama untuk training job jika TRAINING_REGION belum di-set.
 if [[ -z "${TRAINING_REGION}" || "${TRAINING_REGION}" == "us-east-2" ]]; then
   if [[ "${#REGIONS[@]}" -gt 0 ]]; then
     TRAINING_REGION="${REGIONS[0]}"
@@ -201,7 +196,7 @@ fi
 
 TRAINING_REGION="${TRAINING_REGION//[[:space:]]/}"
 
-echo "Menyiapkeun trust policy untuk SageMaker..."
+echo "Nyiapkeun trust policy pikeun SageMaker..."
 cat > /tmp/sagemaker-trust-policy.json <<JSON
 {
   "Version": "2012-10-17",
@@ -218,7 +213,7 @@ cat > /tmp/sagemaker-trust-policy.json <<JSON
 JSON
 
 if aws iam get-role --role-name "${ROLE_NAME}" >/dev/null 2>&1; then
-  echo "Role ${ROLE_NAME} geus aya. Lanjutna attach policy..."
+  echo "Role ${ROLE_NAME} geus aya. Terasna attach policy..."
 else
   echo "Nyieun role ${ROLE_NAME}..."
   aws iam create-role \
@@ -255,13 +250,13 @@ sed -n '1,40p' edas.sh
 echo "--- Dockerfile ---"
 sed -n '1,40p' Dockerfile
 
-read -p "Tekan Enter kanggo neruskeun, atawa Ctrl+C kanggo batal..." -r
+read -p "Tekan Enter pikeun neruskeun, atawa Ctrl+C pikeun batal..." -r
 
 for region in "${REGIONS[@]}"; do
   region="${region//[[:space:]]/}"
   bucket="${ACCOUNT_ID}-${region}"
 
-  echo "== Nyieun / ngecek bucket S3 di ${region} =="
+  echo "== Nyieun / mariksa bucket S3 di ${region} =="
   if ! aws s3api head-bucket --bucket "${bucket}" --region "${region}" >/dev/null 2>&1; then
     aws s3 mb "s3://${bucket}" --region "${region}"
   else
@@ -274,7 +269,7 @@ done
 for region in "${REGIONS[@]}"; do
   region="${region//[[:space:]]/}"
 
-  echo "== Nyieun / ngecek repo ECR di ${region} =="
+  echo "== Nyieun / mariksa repo ECR di ${region} =="
   if ! aws ecr describe-repositories --repository-names "${APP_NAME}" --region "${region}" >/dev/null 2>&1; then
     aws ecr create-repository \
       --repository-name "${APP_NAME}" \
@@ -289,27 +284,27 @@ for region in "${REGIONS[@]}"; do
     docker login --username AWS --password-stdin "${ACCOUNT_ID}.dkr.ecr.${region}.amazonaws.com"
 done
 
-echo "Ngarangkep image Docker..."
+echo "Ngadamel image Docker..."
 docker build -t "${APP_NAME}:${IMAGE_TAG}" .
 
 for region in "${REGIONS[@]}"; do
   region="${region//[[:space:]]/}"
   remote="${ACCOUNT_ID}.dkr.ecr.${region}.amazonaws.com/${APP_NAME}:${IMAGE_TAG}"
 
-  echo "Ngadorong image ka ${remote}..."
+  echo "Ngaronjatkeun image ka ${remote}..."
   docker tag "${APP_NAME}:${IMAGE_TAG}" "${remote}"
   docker push "${remote}"
 done
 
 echo
-read -p "Mau neruskeun nyieun regular dan spot training jobs? [y/N]: " -r CONFIRM_JOBS
+read -p "Mau neruskeun nyieun regular jeung spot training jobs? [y/N]: " -r CONFIRM_JOBS
 if [[ ! "${CONFIRM_JOBS}" =~ ^[Yy]$ ]]; then
-  echo "Training jobs dibatalkan. Proses deployment AWS geus rampung."
+  echo "Training jobs dibatalkeun. Proses deployment AWS geus selesai."
   echo "Role ARN: ${ROLE_ARN}"
   exit 0
 fi
 
-echo "=== Setup Training Job SageMaker ==="
+echo "=== Setelan Training Job SageMaker ==="
 
 regular_success_total=0
 regular_failed_total=0
@@ -325,11 +320,11 @@ for region in "${REGIONS[@]}"; do
   region_spot_success=0
   region_spot_failed=0
 
-  echo "Job bakal dibuat di region: ${region}"
+  echo "Job bakal dijieun di region: ${region}"
 
   if ! check_training_dataset "${region}"; then
-    echo "Membatalkan pembuatan training job di region ${region} karena dataset input tidak valid."
-    echo "[SUMMARY] Region ${region}: regular=0/0, spot=0/0"
+    echo "Ngabatalkeun pembuatan training job di region ${region} lantaran dataset input teu valid."
+    echo "[RINGKESAN] Region ${region}: regular=0, failed=0, spot=0, failed=0"
     continue
   fi
 
@@ -361,17 +356,16 @@ for region in "${REGIONS[@]}"; do
     fi
   done
 
-  echo "[SUMMARY] Region ${region}: regular=${region_regular_success}/${regular_attempt_total}, spot=${region_spot_success}/${spot_attempt_total}"
-  echo "[SUMMARY] Region ${region}: regular success=${region_regular_success}, regular failed=${region_regular_failed}, spot success=${region_spot_success}, spot failed=${region_spot_failed}"
+  echo "[RINGKESAN] Region ${region}: regular success=${region_regular_success}, regular failed=${region_regular_failed}, spot success=${region_spot_success}, spot failed=${region_spot_failed}"
 done
 
 echo
 
-echo "=== Ringkasan Akhir Training Job ==="
+echo "=== Ringkesan Ahir Training Job ==="
 echo "Regular: total attempt=${regular_attempt_total}, success=${regular_success_total}, failed=${regular_failed_total}"
 echo "Spot: total attempt=${spot_attempt_total}, success=${spot_success_total}, failed=${spot_failed_total}"
 
 echo
 
-echo "Proses deployment AWS geus rampung."
+echo "Proses deployment AWS geus selesai."
 echo "Role ARN: ${ROLE_ARN}"
