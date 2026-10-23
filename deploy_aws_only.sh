@@ -52,11 +52,12 @@ SPOT_INSTANCE_TYPES=(
 )
 
 check_training_dataset() {
-  local s3_prefix="s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/"
+  local region="$1"
+  local s3_prefix="s3://${ACCOUNT_ID}-${region}/${APP_NAME}/"
   local object_count
 
   echo "Memeriksa dataset training di ${s3_prefix}..."
-  object_count=$(aws s3 ls "${s3_prefix}" --recursive --region "${TRAINING_REGION}" 2>/tmp/s3-training-check.log | wc -l | tr -d ' ' || true)
+  object_count=$(aws s3 ls "${s3_prefix}" --recursive --region "${region}" 2>/tmp/s3-training-check.log | wc -l | tr -d ' ' || true)
 
   if [[ "${object_count}" -eq 0 ]]; then
     echo "[ERROR] Dataset training tidak ditemukan di ${s3_prefix}."
@@ -75,23 +76,24 @@ create_regular_job() {
   local job_name="$1"
   local instance_type="$2"
   local instance_count="${3:-1}"
-  local input_s3_uri="${4:-s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/}"
+  local input_s3_uri="$4"
+  local target_region="$5"
   local job_arn=""
 
-  echo "Membuat regular training job: ${job_name}"
+  echo "Membuat regular training job: ${job_name} di ${target_region}"
   if job_arn=$(aws sagemaker create-training-job \
-    --region "${TRAINING_REGION}" \
+    --region "${target_region}" \
     --training-job-name "${job_name}" \
     --role-arn "${ROLE_ARN}" \
-    --algorithm-specification "TrainingImage=${ACCOUNT_ID}.dkr.ecr.${TRAINING_REGION}.amazonaws.com/${APP_NAME}:${IMAGE_TAG},TrainingInputMode=Pipe" \
+    --algorithm-specification "TrainingImage=${ACCOUNT_ID}.dkr.ecr.${target_region}.amazonaws.com/${APP_NAME}:${IMAGE_TAG},TrainingInputMode=Pipe" \
     --input-data-config "ChannelName=train,DataSource={S3DataSource={S3DataType=S3Prefix,S3Uri=${input_s3_uri},S3DataDistributionType=FullyReplicated}}" \
-    --output-data-config "S3OutputPath=s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/training-output/${job_name}" \
+    --output-data-config "S3OutputPath=s3://${ACCOUNT_ID}-${target_region}/${APP_NAME}/training-output/${job_name}" \
     --resource-config "InstanceType=${instance_type},InstanceCount=${instance_count},VolumeSizeInGB=10" \
     --stopping-condition "MaxRuntimeInSeconds=432000" \
     --query 'TrainingJobArn' --output text 2>/tmp/sagemaker-create-job.log); then
-    echo "[SUCCESS] Regular job dibuat: name=${job_name}, id=${job_arn}, region=${TRAINING_REGION}"
+    echo "[SUCCESS] Regular job dibuat: name=${job_name}, id=${job_arn}, region=${target_region}"
   else
-    echo "[FAILED] Regular job gagal dibuat: name=${job_name}, region=${TRAINING_REGION}" >&2
+    echo "[FAILED] Regular job gagal dibuat: name=${job_name}, region=${target_region}" >&2
     if [[ -s /tmp/sagemaker-create-job.log ]]; then
       echo "[ERROR] ${job_name}: $(tail -n 20 /tmp/sagemaker-create-job.log)" >&2
     fi
@@ -102,24 +104,25 @@ create_spot_job() {
   local job_name="$1"
   local instance_type="$2"
   local instance_count="${3:-1}"
-  local input_s3_uri="${4:-s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/}"
+  local input_s3_uri="$4"
+  local target_region="$5"
   local job_arn=""
 
-  echo "Membuat spot training job: ${job_name}"
+  echo "Membuat spot training job: ${job_name} di ${target_region}"
   if job_arn=$(aws sagemaker create-training-job \
-    --region "${TRAINING_REGION}" \
+    --region "${target_region}" \
     --training-job-name "${job_name}" \
     --role-arn "${ROLE_ARN}" \
-    --algorithm-specification "TrainingImage=${ACCOUNT_ID}.dkr.ecr.${TRAINING_REGION}.amazonaws.com/${APP_NAME}:${IMAGE_TAG},TrainingInputMode=Pipe" \
+    --algorithm-specification "TrainingImage=${ACCOUNT_ID}.dkr.ecr.${target_region}.amazonaws.com/${APP_NAME}:${IMAGE_TAG},TrainingInputMode=Pipe" \
     --input-data-config "ChannelName=train,DataSource={S3DataSource={S3DataType=S3Prefix,S3Uri=${input_s3_uri},S3DataDistributionType=FullyReplicated}}" \
-    --output-data-config "S3OutputPath=s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/spot-output/${job_name}" \
+    --output-data-config "S3OutputPath=s3://${ACCOUNT_ID}-${target_region}/${APP_NAME}/spot-output/${job_name}" \
     --resource-config "InstanceType=${instance_type},InstanceCount=${instance_count},VolumeSizeInGB=10" \
     --stopping-condition "MaxRuntimeInSeconds=432000,MaxWaitTimeInSeconds=432000" \
     --enable-managed-spot-training \
     --query 'TrainingJobArn' --output text 2>/tmp/sagemaker-create-spot-job.log); then
-    echo "[SUCCESS] Spot job dibuat: name=${job_name}, id=${job_arn}, region=${TRAINING_REGION}"
+    echo "[SUCCESS] Spot job dibuat: name=${job_name}, id=${job_arn}, region=${target_region}"
   else
-    echo "[FAILED] Spot job gagal dibuat: name=${job_name}, region=${TRAINING_REGION}" >&2
+    echo "[FAILED] Spot job gagal dibuat: name=${job_name}, region=${target_region}" >&2
     if [[ -s /tmp/sagemaker-create-spot-job.log ]]; then
       echo "[ERROR] ${job_name}: $(tail -n 20 /tmp/sagemaker-create-spot-job.log)" >&2
     fi
@@ -303,27 +306,30 @@ if [[ ! "${CONFIRM_JOBS}" =~ ^[Yy]$ ]]; then
 fi
 
 echo "=== Setup Training Job SageMaker ==="
-echo "Job bakal dibuat di region: ${TRAINING_REGION}"
 
-if ! check_training_dataset; then
-  echo "Membatalkan pembuatan training job karena dataset input tidak valid."
-  exit 1
-fi
+for region in "${REGIONS[@]}"; do
+  region="${region//[[:space:]]/}"
+  echo "Job bakal dibuat di region: ${region}"
 
-echo "Membuat 24 regular training jobs..."
-for i in "${!REGULAR_INSTANCE_TYPES[@]}"; do
-  idx=$((i + 1))
-  job_name="${APP_NAME}-${idx}"
-  instance_type="${REGULAR_INSTANCE_TYPES[$i]}"
-  create_regular_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/"
-done
+  if ! check_training_dataset "${region}"; then
+    echo "Membatalkan pembuatan training job di region ${region} karena dataset input tidak valid."
+    continue
+  fi
 
-echo "Membuat 12 spot training jobs..."
-for i in "${!SPOT_INSTANCE_TYPES[@]}"; do
-  idx=$((i + 1))
-  job_name="${APP_NAME}-spot-${idx}"
-  instance_type="${SPOT_INSTANCE_TYPES[$i]}"
-  create_spot_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/"
+  for i in "${!REGULAR_INSTANCE_TYPES[@]}"; do
+    idx=$((i + 1))
+    job_name="${APP_NAME}-${idx}"
+    instance_type="${REGULAR_INSTANCE_TYPES[$i]}"
+    create_regular_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${region}/${APP_NAME}/" "${region}"
+  done
+
+  for i in "${!SPOT_INSTANCE_TYPES[@]}"; do
+    idx=$((i + 1))
+    job_name="${APP_NAME}-spot-${idx}"
+    instance_type="${SPOT_INSTANCE_TYPES[$i]}"
+    create_spot_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${region}/${APP_NAME}/" "${region}"
+  done
+
 done
 
 echo
