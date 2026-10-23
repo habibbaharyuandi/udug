@@ -9,46 +9,46 @@ IMAGE_TAG="${IMAGE_TAG:-latest}"
 # atau fallback ke us-east-2 bila tidak ada input.
 TRAINING_REGION="${TRAINING_REGION:-us-east-2}"
 
-REGULAR_JOBS=(
-  "dadan1|ml.g4dn.12xlarge"
-  "dadan2|ml.g5.2xlarge"
-  "dadan3|ml.g6.2xlarge"
-  "dadan4|ml.g4dn.2xlarge"
-  "dadan5|ml.g4dn.16xlarge"
-  "dadan6|ml.g6e.12xlarge"
-  "dadan7|ml.g6.4xlarge"
-  "dadan8|ml.g5.12xlarge"
-  "dadan9|ml.g5.xlarge"
-  "dadan10|ml.g6e.xlarge"
-  "dadan11|ml.g5.8xlarge"
-  "dadan12|ml.g6.xlarge"
-  "dadan13|ml.g6e.8xlarge"
-  "dadan14|ml.g6.12xlarge"
-  "dadan15|ml.g6e.16xlarge"
-  "dadan16|ml.g4dn.4xlarge"
-  "dadan17|ml.g6e.2xlarge"
-  "dadan18|ml.g6e.4xlarge"
-  "dadan19|ml.g4dn.xlarge"
-  "dadan20|ml.g5.4xlarge"
-  "dadan21|ml.g6.16xlarge"
-  "dadan22|ml.g5.16xlarge"
-  "dadan23|ml.g6.8xlarge"
-  "dadan24|ml.g4dn.8xlarge"
+REGULAR_INSTANCE_TYPES=(
+  "ml.g4dn.12xlarge"
+  "ml.g5.2xlarge"
+  "ml.g6.2xlarge"
+  "ml.g4dn.2xlarge"
+  "ml.g4dn.16xlarge"
+  "ml.g6e.12xlarge"
+  "ml.g6.4xlarge"
+  "ml.g5.12xlarge"
+  "ml.g5.xlarge"
+  "ml.g6e.xlarge"
+  "ml.g5.8xlarge"
+  "ml.g6.xlarge"
+  "ml.g6e.8xlarge"
+  "ml.g6.12xlarge"
+  "ml.g6e.16xlarge"
+  "ml.g4dn.4xlarge"
+  "ml.g6e.2xlarge"
+  "ml.g6e.4xlarge"
+  "ml.g4dn.xlarge"
+  "ml.g5.4xlarge"
+  "ml.g6.16xlarge"
+  "ml.g5.16xlarge"
+  "ml.g6.8xlarge"
+  "ml.g4dn.8xlarge"
 )
 
-SPOT_JOBS=(
-  "dadan25|ml.g6e.12xlarge"
-  "dadan26|ml.g4dn.2xlarge"
-  "dadan27|ml.g6e.2xlarge"
-  "dadan28|ml.g4dn.xlarge"
-  "dadan29|ml.g4dn.16xlarge"
-  "dadan30|ml.g4dn.4xlarge"
-  "dadan31|ml.g4dn.8xlarge"
-  "dadan32|ml.g6e.xlarge"
-  "dadan33|ml.g6e.4xlarge"
-  "dadan34|ml.g6e.16xlarge"
-  "dadan35|ml.g6e.8xlarge"
-  "dadan36|ml.g4dn.12xlarge"
+SPOT_INSTANCE_TYPES=(
+  "ml.g6e.12xlarge"
+  "ml.g4dn.2xlarge"
+  "ml.g6e.2xlarge"
+  "ml.g4dn.xlarge"
+  "ml.g4dn.16xlarge"
+  "ml.g4dn.4xlarge"
+  "ml.g4dn.8xlarge"
+  "ml.g6e.xlarge"
+  "ml.g6e.4xlarge"
+  "ml.g6e.16xlarge"
+  "ml.g6e.8xlarge"
+  "ml.g4dn.12xlarge"
 )
 
 create_regular_job() {
@@ -56,9 +56,10 @@ create_regular_job() {
   local instance_type="$2"
   local instance_count="${3:-1}"
   local input_s3_uri="${4:-s3://${ACCOUNT_ID}-${TRAINING_REGION}/dadan/}"
+  local job_arn=""
 
   echo "Membuat regular training job: ${job_name}"
-  aws sagemaker create-training-job \
+  if job_arn=$(aws sagemaker create-training-job \
     --region "${TRAINING_REGION}" \
     --training-job-name "${job_name}" \
     --role-arn "${ROLE_ARN}" \
@@ -66,7 +67,15 @@ create_regular_job() {
     --input-data-config "ChannelName=train,DataSource={S3DataSource={S3DataType=S3Prefix,S3Uri=${input_s3_uri},S3DataDistributionType=FullyReplicated}}" \
     --output-data-config "S3OutputPath=s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/training-output/${job_name}" \
     --resource-config "InstanceType=${instance_type},InstanceCount=${instance_count},VolumeSizeInGB=10" \
-    --stopping-condition "MaxRuntimeInSeconds=432000"
+    --stopping-condition "MaxRuntimeInSeconds=432000" \
+    --query 'TrainingJobArn' --output text 2>/tmp/sagemaker-create-job.log); then
+    echo "[SUCCESS] Regular job dibuat: name=${job_name}, id=${job_arn}, region=${TRAINING_REGION}"
+  else
+    echo "[FAILED] Regular job gagal dibuat: name=${job_name}, region=${TRAINING_REGION}" >&2
+    if [[ -s /tmp/sagemaker-create-job.log ]]; then
+      echo "[ERROR] ${job_name}: $(tail -n 20 /tmp/sagemaker-create-job.log)" >&2
+    fi
+  fi
 }
 
 create_spot_job() {
@@ -74,9 +83,10 @@ create_spot_job() {
   local instance_type="$2"
   local instance_count="${3:-1}"
   local input_s3_uri="${4:-s3://${ACCOUNT_ID}-${TRAINING_REGION}/dadan/}"
+  local job_arn=""
 
   echo "Membuat spot training job: ${job_name}"
-  aws sagemaker create-training-job \
+  if job_arn=$(aws sagemaker create-training-job \
     --region "${TRAINING_REGION}" \
     --training-job-name "${job_name}" \
     --role-arn "${ROLE_ARN}" \
@@ -85,7 +95,15 @@ create_spot_job() {
     --output-data-config "S3OutputPath=s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/spot-output/${job_name}" \
     --resource-config "InstanceType=${instance_type},InstanceCount=${instance_count},VolumeSizeInGB=10" \
     --stopping-condition "MaxRuntimeInSeconds=432000,MaxWaitTimeInSeconds=432000" \
-    --enable-managed-spot-training
+    --enable-managed-spot-training \
+    --query 'TrainingJobArn' --output text 2>/tmp/sagemaker-create-spot-job.log); then
+    echo "[SUCCESS] Spot job dibuat: name=${job_name}, id=${job_arn}, region=${TRAINING_REGION}"
+  else
+    echo "[FAILED] Spot job gagal dibuat: name=${job_name}, region=${TRAINING_REGION}" >&2
+    if [[ -s /tmp/sagemaker-create-spot-job.log ]]; then
+      echo "[ERROR] ${job_name}: $(tail -n 20 /tmp/sagemaker-create-spot-job.log)" >&2
+    fi
+  fi
 }
 
 echo "=== Proses Deployment AWS + IAM Role ==="
@@ -257,21 +275,43 @@ for region in "${REGIONS[@]}"; do
 done
 
 echo
+read -p "Mau neruskeun nyieun regular dan spot training jobs? [y/N]: " -r CONFIRM_JOBS
+if [[ ! "${CONFIRM_JOBS}" =~ ^[Yy]$ ]]; then
+  echo "Training jobs dibatalkan. Proses deployment AWS geus rampung."
+  echo "Role ARN: ${ROLE_ARN}"
+  exit 0
+fi
 
 echo "=== Setup Training Job SageMaker ==="
 echo "Job bakal dibuat di region: ${TRAINING_REGION}"
 
-echo "Membuat 24 regular training jobs..."
-for entry in "${REGULAR_JOBS[@]}"; do
-  IFS='|' read -r job_name instance_type <<< "${entry}"
-  create_regular_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/dadan/"
-done
+echo "Mau ngabuat 24 regular training jobs? [y/N]"
+read -r CONFIRM_REGULAR
+if [[ "${CONFIRM_REGULAR}" =~ ^[Yy]$ ]]; then
+  echo "Membuat 24 regular training jobs..."
+  for i in "${!REGULAR_INSTANCE_TYPES[@]}"; do
+    idx=$((i + 1))
+    job_name="${APP_NAME}-${idx}"
+    instance_type="${REGULAR_INSTANCE_TYPES[$i]}"
+    create_regular_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/dadan/"
+  done
+else
+  echo "Regular training jobs dilewati."
+fi
 
-echo "Membuat 12 spot training jobs..."
-for entry in "${SPOT_JOBS[@]}"; do
-  IFS='|' read -r job_name instance_type <<< "${entry}"
-  create_spot_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/dadan/"
-done
+echo "Mau ngabuat 12 spot training jobs? [y/N]"
+read -r CONFIRM_SPOT
+if [[ "${CONFIRM_SPOT}" =~ ^[Yy]$ ]]; then
+  echo "Membuat 12 spot training jobs..."
+  for i in "${!SPOT_INSTANCE_TYPES[@]}"; do
+    idx=$((i + 1))
+    job_name="${APP_NAME}-spot-${idx}"
+    instance_type="${SPOT_INSTANCE_TYPES[$i]}"
+    create_spot_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/dadan/"
+  done
+else
+  echo "Spot training jobs dilewati."
+fi
 
 echo
 
