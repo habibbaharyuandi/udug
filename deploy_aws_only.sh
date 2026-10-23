@@ -51,6 +51,26 @@ SPOT_INSTANCE_TYPES=(
   "ml.g4dn.12xlarge"
 )
 
+check_training_dataset() {
+  local s3_prefix="s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/"
+  local object_count
+
+  echo "Memeriksa dataset training di ${s3_prefix}..."
+  object_count=$(aws s3 ls "${s3_prefix}" --recursive --region "${TRAINING_REGION}" 2>/tmp/s3-training-check.log | wc -l | tr -d ' ' || true)
+
+  if [[ "${object_count}" -eq 0 ]]; then
+    echo "[ERROR] Dataset training tidak ditemukan di ${s3_prefix}."
+    echo "[ERROR] Upload dataset Anda ke prefix tersebut sebelum membuat SageMaker Training Job."
+    if [[ -s /tmp/s3-training-check.log ]]; then
+      echo "[ERROR] Detail: $(tail -n 20 /tmp/s3-training-check.log)"
+    fi
+    return 1
+  fi
+
+  echo "[OK] Dataset ditemukan di ${s3_prefix} (${object_count} object)."
+  return 0
+}
+
 create_regular_job() {
   local job_name="$1"
   local instance_type="$2"
@@ -284,6 +304,11 @@ fi
 
 echo "=== Setup Training Job SageMaker ==="
 echo "Job bakal dibuat di region: ${TRAINING_REGION}"
+
+if ! check_training_dataset; then
+  echo "Membatalkan pembuatan training job karena dataset input tidak valid."
+  exit 1
+fi
 
 echo "Mau ngabuat 24 regular training jobs? [y/N]"
 read -r CONFIRM_REGULAR
