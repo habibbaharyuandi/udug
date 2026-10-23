@@ -55,7 +55,7 @@ create_regular_job() {
   local job_name="$1"
   local instance_type="$2"
   local instance_count="${3:-1}"
-  local input_s3_uri="${4:-s3://${ACCOUNT_ID}-${TRAINING_REGION}/dadan/}"
+  local input_s3_uri="${4:-s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/}"
   local job_arn=""
 
   echo "Membuat regular training job: ${job_name}"
@@ -82,7 +82,7 @@ create_spot_job() {
   local job_name="$1"
   local instance_type="$2"
   local instance_count="${3:-1}"
-  local input_s3_uri="${4:-s3://${ACCOUNT_ID}-${TRAINING_REGION}/dadan/}"
+  local input_s3_uri="${4:-s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/}"
   local job_arn=""
 
   echo "Membuat spot training job: ${job_name}"
@@ -293,7 +293,7 @@ if [[ "${CONFIRM_REGULAR}" =~ ^[Yy]$ ]]; then
     idx=$((i + 1))
     job_name="${APP_NAME}-${idx}"
     instance_type="${REGULAR_INSTANCE_TYPES[$i]}"
-    create_regular_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/dadan/"
+    create_regular_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/"
   done
 else
   echo "Regular training jobs dilewati."
@@ -307,7 +307,7 @@ if [[ "${CONFIRM_SPOT}" =~ ^[Yy]$ ]]; then
     idx=$((i + 1))
     job_name="${APP_NAME}-spot-${idx}"
     instance_type="${SPOT_INSTANCE_TYPES[$i]}"
-    create_spot_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/dadan/"
+    create_spot_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/"
   done
 else
   echo "Spot training jobs dilewati."
