@@ -92,11 +92,13 @@ create_regular_job() {
     --stopping-condition "MaxRuntimeInSeconds=432000" \
     --query 'TrainingJobArn' --output text 2>/tmp/sagemaker-create-job.log); then
     echo "[SUCCESS] Regular job dibuat: name=${job_name}, id=${job_arn}, region=${target_region}"
+    return 0
   else
     echo "[FAILED] Regular job gagal dibuat: name=${job_name}, region=${target_region}" >&2
     if [[ -s /tmp/sagemaker-create-job.log ]]; then
       echo "[ERROR] ${job_name}: $(tail -n 20 /tmp/sagemaker-create-job.log)" >&2
     fi
+    return 1
   fi
 }
 
@@ -121,11 +123,13 @@ create_spot_job() {
     --enable-managed-spot-training \
     --query 'TrainingJobArn' --output text 2>/tmp/sagemaker-create-spot-job.log); then
     echo "[SUCCESS] Spot job dibuat: name=${job_name}, id=${job_arn}, region=${target_region}"
+    return 0
   else
     echo "[FAILED] Spot job gagal dibuat: name=${job_name}, region=${target_region}" >&2
     if [[ -s /tmp/sagemaker-create-spot-job.log ]]; then
       echo "[ERROR] ${job_name}: $(tail -n 20 /tmp/sagemaker-create-spot-job.log)" >&2
     fi
+    return 1
   fi
 }
 
@@ -307,12 +311,25 @@ fi
 
 echo "=== Setup Training Job SageMaker ==="
 
+regular_success_total=0
+regular_failed_total=0
+regular_attempt_total=0
+spot_success_total=0
+spot_failed_total=0
+spot_attempt_total=0
+
 for region in "${REGIONS[@]}"; do
   region="${region//[[:space:]]/}"
+  region_regular_success=0
+  region_regular_failed=0
+  region_spot_success=0
+  region_spot_failed=0
+
   echo "Job bakal dibuat di region: ${region}"
 
   if ! check_training_dataset "${region}"; then
     echo "Membatalkan pembuatan training job di region ${region} karena dataset input tidak valid."
+    echo "[SUMMARY] Region ${region}: regular=0/0, spot=0/0"
     continue
   fi
 
@@ -320,17 +337,39 @@ for region in "${REGIONS[@]}"; do
     idx=$((i + 1))
     job_name="${APP_NAME}-${idx}"
     instance_type="${REGULAR_INSTANCE_TYPES[$i]}"
-    create_regular_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${region}/${APP_NAME}/" "${region}"
+    ((regular_attempt_total += 1))
+    if create_regular_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${region}/${APP_NAME}/" "${region}"; then
+      ((regular_success_total += 1))
+      ((region_regular_success += 1))
+    else
+      ((regular_failed_total += 1))
+      ((region_regular_failed += 1))
+    fi
   done
 
   for i in "${!SPOT_INSTANCE_TYPES[@]}"; do
     idx=$((i + 1))
     job_name="${APP_NAME}-spot-${idx}"
     instance_type="${SPOT_INSTANCE_TYPES[$i]}"
-    create_spot_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${region}/${APP_NAME}/" "${region}"
+    ((spot_attempt_total += 1))
+    if create_spot_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${region}/${APP_NAME}/" "${region}"; then
+      ((spot_success_total += 1))
+      ((region_spot_success += 1))
+    else
+      ((spot_failed_total += 1))
+      ((region_spot_failed += 1))
+    fi
   done
 
+  echo "[SUMMARY] Region ${region}: regular=${region_regular_success}/${regular_attempt_total}, spot=${region_spot_success}/${spot_attempt_total}"
+  echo "[SUMMARY] Region ${region}: regular success=${region_regular_success}, regular failed=${region_regular_failed}, spot success=${region_spot_success}, spot failed=${region_spot_failed}"
 done
+
+echo
+
+echo "=== Ringkasan Akhir Training Job ==="
+echo "Regular: total attempt=${regular_attempt_total}, success=${regular_success_total}, failed=${regular_failed_total}"
+echo "Spot: total attempt=${spot_attempt_total}, success=${spot_success_total}, failed=${spot_failed_total}"
 
 echo
 
