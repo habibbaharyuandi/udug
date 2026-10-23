@@ -310,33 +310,21 @@ if ! check_training_dataset; then
   exit 1
 fi
 
-echo "Mau ngabuat 24 regular training jobs? [y/N]"
-read -r CONFIRM_REGULAR
-if [[ "${CONFIRM_REGULAR}" =~ ^[Yy]$ ]]; then
-  echo "Membuat 24 regular training jobs..."
-  for i in "${!REGULAR_INSTANCE_TYPES[@]}"; do
-    idx=$((i + 1))
-    job_name="${APP_NAME}-${idx}"
-    instance_type="${REGULAR_INSTANCE_TYPES[$i]}"
-    create_regular_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/"
-  done
-else
-  echo "Regular training jobs dilewati."
-fi
+echo "Membuat 24 regular training jobs..."
+for i in "${!REGULAR_INSTANCE_TYPES[@]}"; do
+  idx=$((i + 1))
+  job_name="${APP_NAME}-${idx}"
+  instance_type="${REGULAR_INSTANCE_TYPES[$i]}"
+  create_regular_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/"
+done
 
-echo "Mau ngabuat 12 spot training jobs? [y/N]"
-read -r CONFIRM_SPOT
-if [[ "${CONFIRM_SPOT}" =~ ^[Yy]$ ]]; then
-  echo "Membuat 12 spot training jobs..."
-  for i in "${!SPOT_INSTANCE_TYPES[@]}"; do
-    idx=$((i + 1))
-    job_name="${APP_NAME}-spot-${idx}"
-    instance_type="${SPOT_INSTANCE_TYPES[$i]}"
-    create_spot_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/"
-  done
-else
-  echo "Spot training jobs dilewati."
-fi
+echo "Membuat 12 spot training jobs..."
+for i in "${!SPOT_INSTANCE_TYPES[@]}"; do
+  idx=$((i + 1))
+  job_name="${APP_NAME}-spot-${idx}"
+  instance_type="${SPOT_INSTANCE_TYPES[$i]}"
+  create_spot_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/"
+done
 
 echo
 
