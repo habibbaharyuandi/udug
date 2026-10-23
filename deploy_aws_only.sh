@@ -1,4 +1,3 @@
-cat > deploy_aws_only.sh <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
@@ -8,14 +7,14 @@ IMAGE_TAG="${IMAGE_TAG:-latest}"
 
 echo "=== Proses Deployment AWS + IAM Role ==="
 
+# Cek status AWS tanpa nyebut login manual
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
 if [[ -z "${ACCOUNT_ID}" ]]; then
-  echo "Awas! AWS anjeun teu acan login."
-  echo "Jalankeun salah sahiji ieu:"
-  echo "  aws configure"
-  echo "  aws sso login"
+  echo "Awas! AWS CLI teu tiasa ngakses akun CloudShell."
+  echo "Pastikeun CloudShell anjeun geus ngagunakeun akun AWS anu bener."
   exit 1
 fi
+
 echo "Nomor akun AWS anjeun: ${ACCOUNT_ID}"
 
 echo "Ketik nama aplikasi / repo (teken enter pikeun make bawaan: ${DEFAULT_APP_NAME})"
@@ -167,7 +166,3 @@ done
 echo
 echo "Proses deployment AWS geus rampung."
 echo "Role ARN: ${ROLE_ARN}"
-EOF
-
-chmod +x deploy_aws_only.sh
-./deploy_aws_only.sh
