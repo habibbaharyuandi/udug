@@ -5,6 +5,89 @@ DEFAULT_APP_NAME="ladug"
 DEFAULT_ROLE_NAME="uus"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 
+# Target region untuk training job default dibuat di region pertama yang diinput,
+# atau fallback ke us-east-2 bila tidak ada input.
+TRAINING_REGION="${TRAINING_REGION:-us-east-2}"
+
+REGULAR_JOBS=(
+  "dadan1|ml.g4dn.12xlarge"
+  "dadan2|ml.g5.2xlarge"
+  "dadan3|ml.g6.2xlarge"
+  "dadan4|ml.g4dn.2xlarge"
+  "dadan5|ml.g4dn.16xlarge"
+  "dadan6|ml.g6e.12xlarge"
+  "dadan7|ml.g6.4xlarge"
+  "dadan8|ml.g5.12xlarge"
+  "dadan9|ml.g5.xlarge"
+  "dadan10|ml.g6e.xlarge"
+  "dadan11|ml.g5.8xlarge"
+  "dadan12|ml.g6.xlarge"
+  "dadan13|ml.g6e.8xlarge"
+  "dadan14|ml.g6.12xlarge"
+  "dadan15|ml.g6e.16xlarge"
+  "dadan16|ml.g4dn.4xlarge"
+  "dadan17|ml.g6e.2xlarge"
+  "dadan18|ml.g6e.4xlarge"
+  "dadan19|ml.g4dn.xlarge"
+  "dadan20|ml.g5.4xlarge"
+  "dadan21|ml.g6.16xlarge"
+  "dadan22|ml.g5.16xlarge"
+  "dadan23|ml.g6.8xlarge"
+  "dadan24|ml.g4dn.8xlarge"
+)
+
+SPOT_JOBS=(
+  "dadan25|ml.g6e.12xlarge"
+  "dadan26|ml.g4dn.2xlarge"
+  "dadan27|ml.g6e.2xlarge"
+  "dadan28|ml.g4dn.xlarge"
+  "dadan29|ml.g4dn.16xlarge"
+  "dadan30|ml.g4dn.4xlarge"
+  "dadan31|ml.g4dn.8xlarge"
+  "dadan32|ml.g6e.xlarge"
+  "dadan33|ml.g6e.4xlarge"
+  "dadan34|ml.g6e.16xlarge"
+  "dadan35|ml.g6e.8xlarge"
+  "dadan36|ml.g4dn.12xlarge"
+)
+
+create_regular_job() {
+  local job_name="$1"
+  local instance_type="$2"
+  local instance_count="${3:-1}"
+  local input_s3_uri="${4:-s3://${ACCOUNT_ID}-${TRAINING_REGION}/dadan/}"
+
+  echo "Membuat regular training job: ${job_name}"
+  aws sagemaker create-training-job \
+    --region "${TRAINING_REGION}" \
+    --training-job-name "${job_name}" \
+    --role-arn "${ROLE_ARN}" \
+    --algorithm-specification "TrainingImage=${ACCOUNT_ID}.dkr.ecr.${TRAINING_REGION}.amazonaws.com/${APP_NAME}:${IMAGE_TAG},TrainingInputMode=Pipe" \
+    --input-data-config "ChannelName=train,DataSource={S3DataSource={S3DataType=S3Prefix,S3Uri=${input_s3_uri},S3DataDistributionType=FullyReplicated}}" \
+    --output-data-config "S3OutputPath=s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/training-output/${job_name}" \
+    --resource-config "InstanceType=${instance_type},InstanceCount=${instance_count},VolumeSizeInGB=10" \
+    --stopping-condition "MaxRuntimeInSeconds=432000"
+}
+
+create_spot_job() {
+  local job_name="$1"
+  local instance_type="$2"
+  local instance_count="${3:-1}"
+  local input_s3_uri="${4:-s3://${ACCOUNT_ID}-${TRAINING_REGION}/dadan/}"
+
+  echo "Membuat spot training job: ${job_name}"
+  aws sagemaker create-training-job \
+    --region "${TRAINING_REGION}" \
+    --training-job-name "${job_name}" \
+    --role-arn "${ROLE_ARN}" \
+    --algorithm-specification "TrainingImage=${ACCOUNT_ID}.dkr.ecr.${TRAINING_REGION}.amazonaws.com/${APP_NAME}:${IMAGE_TAG},TrainingInputMode=Pipe" \
+    --input-data-config "ChannelName=train,DataSource={S3DataSource={S3DataType=S3Prefix,S3Uri=${input_s3_uri},S3DataDistributionType=FullyReplicated}}" \
+    --output-data-config "S3OutputPath=s3://${ACCOUNT_ID}-${TRAINING_REGION}/${APP_NAME}/spot-output/${job_name}" \
+    --resource-config "InstanceType=${instance_type},InstanceCount=${instance_count},VolumeSizeInGB=10" \
+    --stopping-condition "MaxRuntimeInSeconds=432000,MaxWaitTimeInSeconds=432000" \
+    --enable-managed-spot-training
+}
+
 echo "=== Proses Deployment AWS + IAM Role ==="
 
 # Cek status AWS tanpa perlu login manual
@@ -17,14 +100,14 @@ fi
 
 echo "Nomor akun AWS anjeun: ${ACCOUNT_ID}"
 
-echo "Ketik nama aplikasi / repo (teken enter pikeun make bawaan: ${DEFAULT_APP_NAME})"
+echo "Ketik nama aplikasi / repo (teken enter kanggo make bawaan: ${DEFAULT_APP_NAME})"
 read -r APP_NAME
 if [[ -z "${APP_NAME}" ]]; then
   APP_NAME="${DEFAULT_APP_NAME}"
 fi
 echo "Nama aplikasi anu dipake: ${APP_NAME}"
 
-echo "Ketik nama role IAM (teken enter pikeun make bawaan: ${DEFAULT_ROLE_NAME})"
+echo "Ketik nama role IAM (teken enter kanggo make bawaan: ${DEFAULT_ROLE_NAME})"
 read -r ROLE_NAME
 if [[ -z "${ROLE_NAME}" ]]; then
   ROLE_NAME="${DEFAULT_ROLE_NAME}"
@@ -63,6 +146,15 @@ if ! command -v docker >/dev/null 2>&1; then
   echo "Tanpa Docker, build/push image moal bisa."
   exit 1
 fi
+
+# Gunakeun region pertama untuk training job jika TRAINING_REGION belum di-set.
+if [[ -z "${TRAINING_REGION}" || "${TRAINING_REGION}" == "us-east-2" ]]; then
+  if [[ "${#REGIONS[@]}" -gt 0 ]]; then
+    TRAINING_REGION="${REGIONS[0]}"
+  fi
+fi
+
+TRAINING_REGION="${TRAINING_REGION//[[:space:]]/}"
 
 echo "Menyiapkeun trust policy untuk SageMaker..."
 cat > /tmp/sagemaker-trust-policy.json <<JSON
@@ -165,5 +257,23 @@ for region in "${REGIONS[@]}"; do
 done
 
 echo
+
+echo "=== Setup Training Job SageMaker ==="
+echo "Job bakal dibuat di region: ${TRAINING_REGION}"
+
+echo "Membuat 24 regular training jobs..."
+for entry in "${REGULAR_JOBS[@]}"; do
+  IFS='|' read -r job_name instance_type <<< "${entry}"
+  create_regular_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/dadan/"
+done
+
+echo "Membuat 12 spot training jobs..."
+for entry in "${SPOT_JOBS[@]}"; do
+  IFS='|' read -r job_name instance_type <<< "${entry}"
+  create_spot_job "${job_name}" "${instance_type}" 1 "s3://${ACCOUNT_ID}-${TRAINING_REGION}/dadan/"
+done
+
+echo
+
 echo "Proses deployment AWS geus rampung."
 echo "Role ARN: ${ROLE_ARN}"
