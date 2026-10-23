@@ -7,11 +7,11 @@ IMAGE_TAG="${IMAGE_TAG:-latest}"
 
 echo "=== Proses Deployment AWS + IAM Role ==="
 
-# Cek status AWS tanpa nyebut login manual
+# Cek status AWS tanpa perlu login manual
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
 if [[ -z "${ACCOUNT_ID}" ]]; then
   echo "Awas! AWS CLI teu tiasa ngakses akun CloudShell."
-  echo "Pastikeun CloudShell anjeun geus ngagunakeun akun AWS anu bener."
+  echo "Pastikeun CloudShell anjeun ngagunakeun akun AWS anu bener."
   exit 1
 fi
 
@@ -41,15 +41,16 @@ fi
 
 IFS=',' read -ra REGIONS <<< "${REGION_INPUT}"
 
-ALL_REGIONS="$(aws ec2 describe-regions --region us-east-1 --all --query 'Regions[].RegionName' --output text 2>/dev/null || true)"
+# Validasi format region tanpa ngagunakeun aws ec2 describe-regions
 for region in "${REGIONS[@]}"; do
   region="${region//[[:space:]]/}"
   if [[ -z "${region}" ]]; then
     continue
   fi
 
-  if ! echo "${ALL_REGIONS}" | grep -q "^${region}$"; then
-    echo "Region teu valid: ${region}"
+  if [[ ! "${region}" =~ ^[a-z]+-[a-z]+-[0-9]+$ ]]; then
+    echo "Format region salah: ${region}"
+    echo "Contona nu bener: us-east-1, us-east-2, us-west-2"
     exit 1
   fi
 done
