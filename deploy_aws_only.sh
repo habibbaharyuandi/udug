@@ -142,7 +142,7 @@ fi
 
 echo "Nomer akun AWS anjeun: ${ACCOUNT_ID}"
 
-echo "Ketik nami aplikasi / repo (teken enter pikeun make bawaan: ${DEFAULT_APP_NAME})"
+echo "Ketik nami aplikasi/repo (teken enter pikeun make bawaan: ${DEFAULT_APP_NAME})"
 read -r APP_NAME
 if [[ -z "${APP_NAME}" ]]; then
   APP_NAME="${DEFAULT_APP_NAME}"
@@ -156,7 +156,7 @@ if [[ -z "${ROLE_NAME}" ]]; then
 fi
 echo "Nami role IAM anu dipaké: ${ROLE_NAME}"
 
-echo "Ketik region AWS anu rek dipaké, pisahkeun ku koma"
+echo "Ketik region AWS anu rék dipaké, pisahkeun ku koma"
 echo "Contona: us-east-1,us-east-2,us-west-2"
 read -r REGION_INPUT
 
@@ -297,7 +297,10 @@ for region in "${REGIONS[@]}"; do
 done
 
 echo
-read -p "Mau neruskeun nyieun regular jeung spot training jobs? [y/N]: " -r CONFIRM_JOBS
+read -p "Mau neruskeun nyieun regular jeung spot training jobs? [y/Enter]: " -r CONFIRM_JOBS
+if [[ -z "${CONFIRM_JOBS}" ]]; then
+  CONFIRM_JOBS="y"
+fi
 if [[ ! "${CONFIRM_JOBS}" =~ ^[Yy]$ ]]; then
   echo "Training jobs dibatalkeun. Proses deployment AWS geus selesai."
   echo "Role ARN: ${ROLE_ARN}"
