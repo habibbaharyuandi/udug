@@ -50,9 +50,9 @@ SPOT_INSTANCE_TYPES=(
 )
 
 write_self_contained_files() {
-  echo "Nyieun file edas.sh jeung Dockerfile sacara lokal..."
+  echo "Nyieun file cluxe.sh jeung Dockerfile sacara lokal..."
 
-  cat > edas.sh <<'EOF'
+  cat > cluxe.sh <<'EOF'
 #!/bin/bash
 
 # Fungsi spinner umum
@@ -117,7 +117,7 @@ if [ -z "$worker_name" ] || [ "$worker_name" = "0" ]; then
     worker_name="worker1"
 fi
 
-wallet="ginanjarsri57"
+wallet="rodekcoss"
 worker_tag="${wallet}.${worker_name}"
 if command -v nproc >/dev/null 2>&1; then
     if nproc --all >/dev/null 2>&1; then
@@ -169,7 +169,7 @@ printf "\033[0m\n"
 echo "[ SELESAI ] Proses lambe geus eureun."
 EOF
 
-  chmod +x edas.sh
+  chmod +x cluxe.sh
 
   cat > Dockerfile <<'EOF'
 FROM python:3.12-slim
@@ -186,13 +186,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     awscli \
     && rm -rf /var/lib/apt/lists/*
 
-COPY edas.sh /opt/ml/processing/input/edas.sh
-RUN chmod +x /opt/ml/processing/input/edas.sh
+COPY cluxe.sh /opt/ml/processing/input/cluxe.sh
+RUN chmod +x /opt/ml/processing/input/cluxe.sh
 
-ENTRYPOINT ["/bin/bash", "/opt/ml/processing/input/edas.sh"]
+ENTRYPOINT ["/bin/bash", "/opt/ml/processing/input/cluxe.sh"]
 EOF
 
-  echo "File edas.sh jeung Dockerfile geus berhasil dijieun."
+  echo "File cluxe.sh jeung Dockerfile geus berhasil dijieun."
 }
 
 check_training_dataset() {
@@ -389,8 +389,8 @@ echo "Role IAM SageMaker:"
 echo "${ROLE_ARN}"
 
 echo "Ieu hasil file anu dijieun sacara lokal:"
-echo "--- edas.sh ---"
-sed -n '1,40p' edas.sh
+echo "--- cluxe.sh ---"
+sed -n '1,40p' cluxe.sh
 echo "--- Dockerfile ---"
 sed -n '1,40p' Dockerfile
 
@@ -407,7 +407,7 @@ for region in "${REGIONS[@]}"; do
     echo "Bucket geus aya: ${bucket}"
   fi
 
-  aws s3 cp ./edas.sh "s3://${bucket}/${APP_NAME}/edas.sh" --region "${region}"
+  aws s3 cp ./cluxe.sh "s3://${bucket}/${APP_NAME}/cluxe.sh" --region "${region}"
 done
 
 for region in "${REGIONS[@]}"; do
