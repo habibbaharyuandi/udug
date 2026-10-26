@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+PROFILE="${AWS_PROFILE:-default}"
+INTERVAL="${INTERVAL:-15}"
+SERVICE_CODE="${SERVICE_CODE:-}"
+QUOTA_CODE="${QUOTA_CODE:-}"
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "ERROR: command '$1' not found."
+    exit 1
+  }
+}
+
+require_cmd aws
+require_cmd jq
+
+has_active_quota_request() {
+  local json
+  if [[ -n "${SERVICE_CODE}" && -n "${QUOTA_CODE}" ]]; then
+    json=$(aws service-quotas list-requested-service-quota-change-history-by-quota \
+      --profile "${PROFILE}" \
+      --service-code "${SERVICE_CODE}" \
+      --quota-code "${QUOTA_CODE}" \
+      --output json 2>/dev/null || echo "{}")
+  else
+    json=$(aws service-quotas list-requested-service-quota-change-history \
+      --profile "${PROFILE}" \
+      --output json 2>/dev/null || echo "{}")
+  fi
+
+  echo "${json}" | jq -e '
+    .RequestedServiceQuotaChangeHistory[]? |
+    select(.Status == "PENDING" or .Status == "CASE_OPENED" or .Status == "PENDING_CHANGE")
+  ' >/dev/null 2>&1
+}
+
+has_active_support_case() {
+  aws support list-cases \
+    --profile "${PROFILE}" \
+    --status opened \
+    --output json 2>/dev/null | jq -e '
+      .cases[]? |
+      select(.subject | test("quota"; "i"))
+    ' >/dev/null 2>&1
+}
+
+print_quota_status() {
+  echo
+  echo "=== AWS quota request status ==="
+  if [[ -n "${SERVICE_CODE}" && -n "${QUOTA_CODE}" ]]; then
+    aws service-quotas list-requested-service-quota-change-history-by-quota \
+      --profile "${PROFILE}" \
+      --service-code "${SERVICE_CODE}" \
+      --quota-code "${QUOTA_CODE}" \
+      --output table 2>/dev/null || true
+  else
+    aws service-quotas list-requested-service-quota-change-history \
+      --profile "${PROFILE}" \
+      --output table 2>/dev/null || true
+  fi
+}
+
+print_support_case_status() {
+  echo
+  echo "=== AWS Support quota cases ==="
+  aws support list-cases \
+    --profile "${PROFILE}" \
+    --status opened \
+    --output json 2>/dev/null | jq -r '
+      .cases[]? |
+      select(.subject | test("quota"; "i")) |
+      "caseId=\(.caseId) | status=\(.status) | subject=\(.subject) | created=\(.createdTime)"
+    ' || true
+}
+
+echo "=== Auto checker AWS quota request ==="
+echo "Profile: ${PROFILE}"
+echo "Interval: ${INTERVAL}s"
+
+while true; do
+  echo
+  echo "== $(date -u '+%Y-%m-%d %H:%M:%S UTC') =="
+
+  if has_active_quota_request; then
+    echo "[FOUND] Ada request quota yang masih aktif / pending."
+    print_quota_status
+    print_support_case_status
+    exit 0
+  fi
+
+  if has_active_support_case; then
+    echo "[FOUND] Ada AWS Support case quota aktif."
+    print_support_case_status
+    exit 0
+  fi
+
+  echo "Belum ada quota request aktif / case quota aktif."
+  sleep "${INTERVAL}"
+done
